@@ -5,6 +5,7 @@
 
 package meteordevelopment.meteorclient.systems.modules.player;
 
+import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.settings.BoolSetting;
 import meteordevelopment.meteorclient.settings.EnumSetting;
 import meteordevelopment.meteorclient.settings.Setting;
@@ -13,6 +14,8 @@ import meteordevelopment.meteorclient.systems.config.Config;
 import meteordevelopment.meteorclient.systems.modules.Categories;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.utils.player.InvUtils;
+import meteordevelopment.orbit.EventHandler;
+import net.minecraft.entity.EntityPose;
 import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.item.ArmorItem;
 import net.minecraft.item.Item;
@@ -20,6 +23,13 @@ import net.minecraft.item.Items;
 
 public class ChestSwap extends Module {
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
+
+    private final Setting<Mode> mode = sgGeneral.add(new EnumSetting.Builder<Mode>()
+        .name("mode")
+        .description("Which mode to use.")
+        .defaultValue(Mode.OnToggle)
+        .build()
+    );
 
     private final Setting<Chestplate> chestplate = sgGeneral.add(new EnumSetting.Builder<Chestplate>()
         .name("chestplate")
@@ -32,6 +42,7 @@ public class ChestSwap extends Module {
         .name("stay-on")
         .description("Stays on and activates when you turn it off.")
         .defaultValue(false)
+        .visible(() -> mode.get() == Mode.OnToggle)
         .build()
     );
 
@@ -41,13 +52,37 @@ public class ChestSwap extends Module {
 
     @Override
     public void onActivate() {
-        swap();
-        if (!stayOn.get()) toggle();
+        if (mode.get() == Mode.OnToggle) {
+            swap();
+            if (!stayOn.get()) toggle();
+        }
     }
 
     @Override
     public void onDeactivate() {
-        if (stayOn.get()) swap();
+        if (mode.get() == Mode.OnToggle && stayOn.get()) swap();
+    }
+
+    private long lastJumpEndedSince = 0;
+    private boolean lastWasJump = false;
+
+    @EventHandler
+    private void onTick(TickEvent.Pre event) {
+        if (mode.get() != Mode.OnDoubleJump) return;
+
+        if (mc.options.jumpKey.isPressed()) {
+            if (!lastWasJump && lastJumpEndedSince < 8) {
+                swap();
+                if (mc.player.getEquippedStack(EquipmentSlot.CHEST).getItem() == Items.ELYTRA) mc.player.setPose(EntityPose.FALL_FLYING);
+            }
+            lastWasJump = true;
+            lastJumpEndedSince = 0;
+        }
+        else {
+            lastJumpEndedSince++;
+            lastWasJump = false;
+            if (mc.player.getPose() != EntityPose.FALL_FLYING && mc.player.getEquippedStack(EquipmentSlot.CHEST).getItem() == Items.ELYTRA) swap();
+        }
     }
 
     public void swap() {
@@ -133,5 +168,10 @@ public class ChestSwap extends Module {
         Netherite,
         PreferDiamond,
         PreferNetherite
+    }
+
+    public enum Mode {
+        OnToggle,
+        OnDoubleJump
     }
 }
