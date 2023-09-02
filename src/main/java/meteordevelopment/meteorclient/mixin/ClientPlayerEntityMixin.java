@@ -14,6 +14,7 @@ import meteordevelopment.meteorclient.events.entity.player.SendMovementPacketsEv
 import meteordevelopment.meteorclient.systems.modules.Modules;
 import meteordevelopment.meteorclient.systems.modules.movement.NoSlow;
 import meteordevelopment.meteorclient.systems.modules.movement.Scaffold;
+import meteordevelopment.meteorclient.systems.modules.movement.Flight;
 import meteordevelopment.meteorclient.systems.modules.movement.Sneak;
 import meteordevelopment.meteorclient.systems.modules.movement.Velocity;
 import meteordevelopment.meteorclient.systems.modules.player.Portals;
@@ -55,6 +56,7 @@ public abstract class ClientPlayerEntityMixin extends AbstractClientPlayerEntity
     @Inject(method = "isSneaking", at = @At("HEAD"), cancellable = true)
     private void onIsSneaking(CallbackInfoReturnable<Boolean> info) {
         if (Modules.get().get(Scaffold.class).scaffolding()) info.setReturnValue(false);
+        if (Modules.get().get(Flight.class).noSneak()) info.setReturnValue(false);
     }
 
     @Inject(method = "shouldSlowDown", at = @At("HEAD"), cancellable = true)
@@ -67,6 +69,7 @@ public abstract class ClientPlayerEntityMixin extends AbstractClientPlayerEntity
     @Inject(method = "pushOutOfBlocks", at = @At("HEAD"), cancellable = true)
     private void onPushOutOfBlocks(double x, double d, CallbackInfo info) {
         Velocity velocity = Modules.get().get(Velocity.class);
+        if (Modules.get().get(Flight.class).noSneak()) info.cancel();
         if (velocity.isActive() && velocity.blocks.get()) {
             info.cancel();
         }

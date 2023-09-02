@@ -5,18 +5,28 @@
 
 package meteordevelopment.meteorclient.systems.modules.movement;
 
+import meteordevelopment.meteorclient.events.entity.player.InteractBlockEvent;
 import meteordevelopment.meteorclient.events.packets.PacketEvent;
+import meteordevelopment.meteorclient.events.world.BlockActivateEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.mixin.ClientPlayerEntityAccessor;
 import meteordevelopment.meteorclient.mixin.PlayerMoveC2SPacketAccessor;
 import meteordevelopment.meteorclient.settings.*;
 import meteordevelopment.meteorclient.systems.modules.Categories;
 import meteordevelopment.meteorclient.systems.modules.Module;
+import meteordevelopment.meteorclient.utils.player.FindItemResult;
+import meteordevelopment.meteorclient.utils.player.InvUtils;
+import meteordevelopment.meteorclient.utils.world.BlockUtils;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.block.AbstractBlock;
 import net.minecraft.entity.Entity;
+import net.minecraft.item.BlockItem;
 import net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket;
 import net.minecraft.server.network.ServerPlayNetworkHandler;
+import net.minecraft.util.Hand;
+import net.minecraft.util.hit.HitResult;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
 
 public class Flight extends Module {
@@ -45,6 +55,13 @@ public class Flight extends Module {
     private final Setting<Boolean> verticalSpeedMatch = sgGeneral.add(new BoolSetting.Builder()
         .name("vertical-speed-match")
         .description("Matches your vertical speed to your horizontal speed, otherwise uses vanilla ratio.")
+        .defaultValue(false)
+        .build()
+    );
+
+    private final Setting<Boolean> noSneak = sgGeneral.add(new BoolSetting.Builder()
+        .name("no-sneak")
+        .description("Prevents you from getting kicked for sneaking.")
         .defaultValue(false)
         .build()
     );
@@ -83,6 +100,10 @@ public class Flight extends Module {
 
     public Flight() {
         super(Categories.Movement, "flight", "FLYYYY! No Fall is recommended with this module.");
+    }
+
+    public boolean noSneak() {
+        return isActive() && noSneak.get();
     }
 
     @Override
@@ -145,15 +166,15 @@ public class Flight extends Module {
 
         switch (mode.get()) {
             case Velocity -> {
-                // TODO: deal with underwater movement, find a way to "spoof" not being in water
-
                 mc.player.getAbilities().flying = false;
                 mc.player.setVelocity(0, 0, 0);
-                Vec3d initialVelocity = mc.player.getVelocity();
+
                 if (mc.options.jumpKey.isPressed())
-                    mc.player.setVelocity(initialVelocity.add(0, speed.get() * (verticalSpeedMatch.get() ? 10f : 5f), 0));
-                if (mc.options.sneakKey.isPressed())
-                    mc.player.setVelocity(initialVelocity.subtract(0, speed.get() * (verticalSpeedMatch.get() ? 10f : 5f), 0));
+                    mc.player.setVelocity(mc.player.getVelocity().add(0, speed.get() * (verticalSpeedMatch.get() ? 10f : 5f), 0));
+                if (mc.options.sneakKey.isPressed()) {
+                    mc.player.setVelocity(mc.player.getVelocity().subtract(0, speed.get() * (verticalSpeedMatch.get() ? 10f : 5f), 0));
+                    mc.player.setOnGround(false);
+                }
             }
             case Abilities -> {
                 if (mc.player.isSpectator()) return;
