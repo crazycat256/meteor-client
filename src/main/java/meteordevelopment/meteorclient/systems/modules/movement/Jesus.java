@@ -16,11 +16,14 @@ import meteordevelopment.meteorclient.mixininterface.IVec3d;
 import meteordevelopment.meteorclient.settings.*;
 import meteordevelopment.meteorclient.systems.modules.Categories;
 import meteordevelopment.meteorclient.systems.modules.Module;
+import meteordevelopment.meteorclient.systems.modules.Modules;
 import meteordevelopment.meteorclient.utils.entity.EntityUtils;
 import meteordevelopment.orbit.EventHandler;
+import net.minecraft.block.Blocks;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
 import net.minecraft.enchantment.ProtectionEnchantment;
+import net.minecraft.entity.EntityType;
 import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.fluid.Fluids;
 import net.minecraft.network.packet.Packet;
@@ -29,6 +32,7 @@ import net.minecraft.registry.tag.FluidTags;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.MathHelper;
+import net.minecraft.util.math.Vec3d;
 import net.minecraft.util.shape.VoxelShape;
 import net.minecraft.util.shape.VoxelShapes;
 import net.minecraft.world.GameMode;
@@ -91,6 +95,22 @@ public class Jesus extends Module {
         .range(1, 255)
         .sliderRange(3, 20)
         .visible(() -> waterMode.get() == Mode.Solid && dipOnFallWater.get())
+        .build()
+    );
+
+    private final Setting<Boolean> disableWhenSwimming = sgWater.add(new BoolSetting.Builder()
+        .name("disable-when-swimming")
+        .description("Disables when you are swimming.")
+        .defaultValue(false)
+        .visible(() -> waterMode.get() == Mode.Solid)
+        .build()
+    );
+
+    private final Setting<Boolean> disableInBubbleColumn = sgWater.add(new BoolSetting.Builder()
+        .name("disable-in-bubble-column")
+        .description("Disable when you are in a bubble column.")
+        .defaultValue(false)
+        .visible(() -> waterMode.get() == Mode.Solid)
         .build()
     );
 
@@ -186,6 +206,8 @@ public class Jesus extends Module {
         }
 
         if (mc.player.isTouchingWater() && !waterShouldBeSolid()) return;
+        if (mc.player.isInSwimmingPose() && disableWhenSwimming.get()) return;
+        if (isTouchingBubbleColumn() && disableInBubbleColumn.get()) return;
         if (mc.player.isInLava() && !lavaShouldBeSolid()) return;
 
         // Move up
@@ -204,6 +226,7 @@ public class Jesus extends Module {
 
     @EventHandler
     private void onCanWalkOnFluid(CanWalkOnFluidEvent event) {
+        if (mc.player != null && mc.player.isInSwimmingPose() && disableWhenSwimming.get()) return;
         if ((event.fluidState.getFluid() == Fluids.WATER || event.fluidState.getFluid() == Fluids.FLOWING_WATER) && waterShouldBeSolid()) {
             event.walkOnFluid = true;
         }
@@ -215,6 +238,7 @@ public class Jesus extends Module {
     @EventHandler
     private void onFluidCollisionShape(CollisionShapeEvent event) {
         if (event.state.getFluidState().isEmpty()) return;
+        if (Modules.get().get(Flight.class).isActive()) return;
 
         if ((event.state.getBlock() == Blocks.WATER | event.state.getFluidState().getFluid() == Fluids.WATER) && !mc.player.isTouchingWater() && waterShouldBeSolid()) {
             event.shape = VoxelShapes.fullCube();
@@ -269,6 +293,8 @@ public class Jesus extends Module {
     private boolean waterShouldBeSolid() {
         if (EntityUtils.getGameMode(mc.player) == GameMode.SPECTATOR || mc.player.getAbilities().flying) return false;
 
+        if (mc.player.getVehicle() != null && mc.player.getVehicle().getType() == EntityType.BOAT) return false;
+
         if (dipIfBurning.get() && mc.player.isOnFire()) return false;
 
         if (dipOnSneakWater.get() && mc.options.sneakKey.isPressed()) return false;
@@ -313,6 +339,30 @@ public class Jesus extends Module {
         }
 
         return foundLiquid && !foundSolid;
+    }
+
+    private boolean isTouchingBubbleColumn() {
+        boolean foundBubbleColumn = false;
+
+        Box playerBox = mc.player.getBoundingBox();
+        Vec3d[] corners = {
+            new Vec3d(playerBox.minX, playerBox.minY, playerBox.minZ),
+            new Vec3d(playerBox.minX, playerBox.minY, playerBox.maxZ),
+            new Vec3d(playerBox.maxX, playerBox.minY, playerBox.minZ),
+            new Vec3d(playerBox.maxX, playerBox.minY, playerBox.maxZ),
+            new Vec3d(playerBox.minX, playerBox.maxY, playerBox.minZ),
+            new Vec3d(playerBox.minX, playerBox.maxY, playerBox.maxZ),
+            new Vec3d(playerBox.maxX, playerBox.maxY, playerBox.minZ),
+            new Vec3d(playerBox.maxX, playerBox.maxY, playerBox.maxZ)
+        };
+        for (Vec3d corner : corners) {
+            BlockPos bp = new BlockPos((int) Math.floor(corner.x), (int) Math.floor(corner.y), (int) Math.floor(corner.z));
+            if (mc.world.getBlockState(bp).getBlock() == Blocks.BUBBLE_COLUMN) {
+                foundBubbleColumn = true;
+                break;
+            }
+        }
+        return foundBubbleColumn;
     }
 
     public enum Mode {
