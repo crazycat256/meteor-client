@@ -36,6 +36,7 @@ import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
 import net.minecraft.block.NoteBlock;
 import net.minecraft.block.enums.Instrument;
+import net.minecraft.entity.EntityPose;
 import net.minecraft.network.packet.c2s.play.PlayerActionC2SPacket;
 import net.minecraft.network.packet.c2s.play.PlayerInteractBlockC2SPacket;
 import net.minecraft.server.network.ServerPlayNetworkHandler;
@@ -58,12 +59,15 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
+import static java.lang.Math.floor;
+
 
 public class Notebot extends Module {
 
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
     private final SettingGroup sgNoteMap = settings.createGroup("Note Map", false);
     private final SettingGroup sgRender = settings.createGroup("Render", true);
+    private final SettingGroup sgDebug = settings.createGroup("Debug");
 
     public final Setting<Integer> tickDelay = sgGeneral.add(new IntSetting.Builder()
         .name("tick-delay")
@@ -233,17 +237,94 @@ public class Notebot extends Module {
         .build()
     );
 
+    public final Setting<Boolean> showInvalidNoteblocks = sgDebug.add(new BoolSetting.Builder()
+        .name("show-invalid-noteblocks")
+        .description("Show invalid Noteblocks")
+        .defaultValue(false)
+        .build()
+    );
+
+    public final Setting<Vector3d> playerPos = sgDebug.add(new Vector3dSetting.Builder()
+        .name("player-pos")
+        .description("The offset of the text.")
+        .defaultValue(new Vector3d(0, 0, 0))
+        .noSlider()
+        .visible(showInvalidNoteblocks::get)
+        .build()
+    );
+
+    private final Setting<Integer> range = sgGeneral.add(new IntSetting.Builder()
+        .name("range")
+        .description("The range of the scanner.")
+        .defaultValue(10)
+        .min(1)
+        .sliderRange(1, 20)
+        .build()
+    );
+
+    private final Setting<SettingColor> offSetSideColor = sgDebug.add(new ColorSetting.Builder()
+        .name("offset-side-color")
+        .description("The color of the offset.")
+        .defaultValue(new SettingColor(0, 0, 255, 16))
+        .visible(showInvalidNoteblocks::get)
+        .build()
+    );
+
+    private final Setting<SettingColor> offSetLineColor = sgDebug.add(new ColorSetting.Builder()
+        .name("offset-line-color")
+        .description("The color of the offset.")
+        .defaultValue(new SettingColor(0, 0, 255))
+        .visible(showInvalidNoteblocks::get)
+        .build()
+    );
+
+    private final Setting<SettingColor> invalidSpotSideColor = sgDebug.add(new ColorSetting.Builder()
+        .name("invalid-spot-side-color")
+        .description("The color of the invalid spots.")
+        .defaultValue(new SettingColor(255, 255, 0, 16))
+        .visible(showInvalidNoteblocks::get)
+        .build()
+    );
+
+    private final Setting<SettingColor> invalidSpotLineColor = sgDebug.add(new ColorSetting.Builder()
+        .name("invalid-spot-line-color")
+        .description("The color of the invalid spots.")
+        .defaultValue(new SettingColor(255, 255, 0))
+        .visible(showInvalidNoteblocks::get)
+        .build()
+    );
+
+    private final Setting<SettingColor> tooFarSideColor = sgDebug.add(new ColorSetting.Builder()
+        .name("too-far-side-color")
+        .description("The color of the too far blocks.")
+        .defaultValue(new SettingColor(255, 0, 0, 16))
+        .visible(showInvalidNoteblocks::get)
+        .build()
+    );
+
+    private final Setting<SettingColor> tooFarLineColor = sgDebug.add(new ColorSetting.Builder()
+        .name("too-far-line-color")
+        .description("The color of the too far blocks.")
+        .defaultValue(new SettingColor(255, 0, 0))
+        .visible(showInvalidNoteblocks::get)
+        .build()
+    );
+
     private CompletableFuture<Song> loadingSongFuture = null;
 
     private Song song; // Loaded song
     private final Map<Note, BlockPos> noteBlockPositions = new HashMap<>(); // Currently used noteblocks by the song
     private final Multimap<Note, BlockPos> scannedNoteblocks = MultimapBuilder.linkedHashKeys().arrayListValues().build(); // Found noteblocks
     private final List<BlockPos> clickedBlocks = new ArrayList<>();
+
+    private final List<BlockPos> invalidNoteblockSpots = new ArrayList<>();
+    private final List<BlockPos> tooFarNoteblocks = new ArrayList<>();
     private Stage stage = Stage.None;
     private PlayingMode playingMode = PlayingMode.None;
     private boolean isPlaying = false;
     private int currentTick = 0;
     private int ticks = 0;
+    private int t = 0;
     private WLabel status;
 
     private boolean anyNoteblockTuned = false;
@@ -301,6 +382,43 @@ public class Notebot extends Module {
 
     @EventHandler
     private void onRender3D(Render3DEvent event) {
+
+        Vec3d pos = new Vec3d(playerPos.get().x, playerPos.get().y, playerPos.get().z);
+        if (showInvalidNoteblocks.get()) {
+            event.renderer.box(
+                pos.x - 0.3,
+                pos.y,
+                pos.z - 0.3,
+                pos.x + 0.3,
+                pos.y + 2,
+                pos.z + 0.3,
+                offSetSideColor.get(),
+                offSetLineColor.get(),
+                shapeMode.get(),
+                0
+            );
+            for (BlockPos blockPos : tooFarNoteblocks) {
+                double x1 = blockPos.getX();
+                double y1 = blockPos.getY();
+                double z1 = blockPos.getZ();
+                double x2 = blockPos.getX() + 1;
+                double y2 = blockPos.getY() + 1;
+                double z2 = blockPos.getZ() + 1;
+
+                event.renderer.box(x1, y1, z1, x2, y2, z2, tooFarSideColor.get(), tooFarLineColor.get(), shapeMode.get(), 0);
+            }
+            for (BlockPos blockPos : invalidNoteblockSpots) {
+                double x1 = blockPos.getX();
+                double y1 = blockPos.getY();
+                double z1 = blockPos.getZ();
+                double x2 = blockPos.getX() + 1;
+                double y2 = blockPos.getY() + 1;
+                double z2 = blockPos.getZ() + 1;
+
+                event.renderer.box(x1, y1, z1, x2, y2, z2, invalidSpotSideColor.get(), invalidSpotLineColor.get(), shapeMode.get(), 0);
+            }
+        }
+
         if (!renderBoxes.get()) return;
 
         if (stage != Stage.SetUp && stage != Stage.Tune && stage != Stage.WaitingToCheckNoteblocks && !isPlaying) return;
@@ -463,6 +581,39 @@ public class Notebot extends Module {
 
             updateStatus();
         }
+
+        if (++t >= 5) {
+            t = 0;
+            tooFarNoteblocks.clear();
+            invalidNoteblockSpots.clear();
+            int min = -range.get() - 2;
+            int max = range.get() + 2;
+
+            // Scan for noteblocks horizontally
+            // 6^3 kek
+            Vec3d pos = new Vec3d(playerPos.get().x, playerPos.get().y, playerPos.get().z);
+            for (int y = min; y < max; y++) {
+                for (int x = min; x < max; x++) {
+                    for (int z = min; z < max; z++) {
+
+                        BlockPos blockPos = new BlockPos((int) floor(pos.x + x), (int) floor(pos.y + y), (int) floor(pos.z + z));
+                        Vec3d eyePos = pos.add(0, mc.player.getEyeHeight(EntityPose.STANDING), 0);
+
+                        BlockState blockState = mc.world.getBlockState(blockPos);
+                        if (blockState.getBlock() != Blocks.NOTE_BLOCK) continue;
+
+                        // Copied from ServerPlayNetworkHandler#onPlayerInteractBlock
+                        Vec3d vec3d2 = Vec3d.ofCenter(blockPos);
+                        double sqDist = eyePos.squaredDistanceTo(vec3d2);
+                        if (sqDist > ServerPlayNetworkHandler.MAX_BREAK_SQUARED_DISTANCE)
+                            tooFarNoteblocks.add(blockPos);
+                        else if (!isValidScanSpot(blockPos))
+                            invalidNoteblockSpots.add(blockPos);
+
+                    }
+                }
+            }
+        }
     }
 
     /**
@@ -543,7 +694,6 @@ public class Notebot extends Module {
      */
     private void setupTuneHitsMap() {
         tuneHits.clear();
-
         for (var entry : noteBlockPositions.entrySet()) {
             int targetLevel = entry.getKey().getNoteLevel();
             BlockPos blockPos = entry.getValue();
@@ -571,7 +721,10 @@ public class Notebot extends Module {
         WButton alignCenter = table.add(theme.button("Align Center")).expandX().minWidth(100).widget();
         alignCenter.action = () -> {
             if (mc.player == null) return;
-            mc.player.setPosition(Vec3d.ofBottomCenter(mc.player.getBlockPos()));
+            Vec3d pos = Vec3d.ofBottomCenter(mc.player.getBlockPos());
+            mc.player.setPosition(pos.x, mc.player.getY(), pos.z);
+            if (showInvalidNoteblocks.get())
+                playerPos.set(new Vector3d(pos.x, mc.player.getY(), pos.z));
         };
 
         table.row();
@@ -789,7 +942,6 @@ public class Notebot extends Module {
                     scannedNoteblocks.put(note, pos);
                 }
             }
-
         }
     }
 
