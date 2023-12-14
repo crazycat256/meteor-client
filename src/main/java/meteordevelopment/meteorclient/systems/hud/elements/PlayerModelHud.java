@@ -10,6 +10,7 @@ import meteordevelopment.meteorclient.systems.hud.Hud;
 import meteordevelopment.meteorclient.systems.hud.HudElement;
 import meteordevelopment.meteorclient.systems.hud.HudElementInfo;
 import meteordevelopment.meteorclient.systems.hud.HudRenderer;
+import meteordevelopment.meteorclient.utils.render.color.Color;
 import meteordevelopment.meteorclient.utils.render.color.SettingColor;
 import net.minecraft.client.gui.screen.ingame.InventoryScreen;
 import net.minecraft.entity.player.PlayerEntity;
@@ -30,6 +31,7 @@ public class PlayerModelHud extends HudElement {
         .defaultValue(2)
         .min(1)
         .sliderRange(1, 5)
+        .onChanged(aDouble -> calculateSize())
         .build()
     );
 
@@ -86,12 +88,12 @@ public class PlayerModelHud extends HudElement {
 
     public PlayerModelHud() {
         super(INFO);
+
+        calculateSize();
     }
 
     @Override
     public void render(HudRenderer renderer) {
-        setSize(50 * scale.get(), 75 * scale.get());
-
         renderer.post(() -> {
             PlayerEntity player = mc.player;
             if (player == null) return;
@@ -99,11 +101,19 @@ public class PlayerModelHud extends HudElement {
             float yaw = copyYaw.get() ? MathHelper.wrapDegrees(player.prevYaw + (player.getYaw() - player.prevYaw) * mc.getTickDelta()) : (float) customYaw.get();
             float pitch = copyPitch.get() ? player.getPitch() : (float) customPitch.get();
 
-            InventoryScreen.drawEntity(renderer.drawContext, (int) (x + (25 * scale.get())), (int) (y + (66 * scale.get())), (int) (30 * scale.get()), -yaw, -pitch, player);
+            InventoryScreen.drawEntity(renderer.drawContext, x, y, (int) (x + (25 * scale.get())), (int) (y + (66 * scale.get())), (int) (30 * scale.get()), 0, -yaw, -pitch, player);
         });
 
         if (background.get()) {
             renderer.quad(x, y, getWidth(), getHeight(), backgroundColor.get());
+        } else if (mc.player == null) {
+            renderer.quad(x, y, getWidth(), getHeight(), backgroundColor.get());
+            renderer.line(x, y, x + getWidth(), y + getHeight(), Color.GRAY);
+            renderer.line(x + getWidth(), y, x, y + getHeight(), Color.GRAY);
         }
+    }
+
+    private void calculateSize() {
+        setSize(50 * scale.get(), 75 * scale.get());
     }
 }

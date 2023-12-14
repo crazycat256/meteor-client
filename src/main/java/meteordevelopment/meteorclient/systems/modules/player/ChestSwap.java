@@ -20,6 +20,7 @@ import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.item.ArmorItem;
 import net.minecraft.item.Item;
 import net.minecraft.item.Items;
+import net.minecraft.network.packet.c2s.play.CloseHandledScreenC2SPacket;
 
 public class ChestSwap extends Module {
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
@@ -43,6 +44,13 @@ public class ChestSwap extends Module {
         .description("Stays on and activates when you turn it off.")
         .defaultValue(false)
         .visible(() -> mode.get() == Mode.OnToggle)
+        .build()
+    );
+
+    private final Setting<Boolean> closeInventory = sgGeneral.add(new BoolSetting.Builder()
+        .name("close-inventory")
+        .description("Sends inventory close after swap.")
+        .defaultValue(false)
         .build()
     );
 
@@ -155,6 +163,10 @@ public class ChestSwap extends Module {
 
     private void equip(int slot) {
         InvUtils.move().from(slot).toArmor(2);
+        if (closeInventory.get()) {
+            // Notchian clients send a Close Window packet with Window ID 0 to close their inventory even though there is never an Open Screen packet for the inventory.
+            mc.getNetworkHandler().sendPacket(new CloseHandledScreenC2SPacket(0));
+        }
     }
 
     @Override
