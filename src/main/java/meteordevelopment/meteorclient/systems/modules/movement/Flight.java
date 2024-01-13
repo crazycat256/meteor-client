@@ -5,9 +5,7 @@
 
 package meteordevelopment.meteorclient.systems.modules.movement;
 
-import meteordevelopment.meteorclient.events.entity.player.InteractBlockEvent;
 import meteordevelopment.meteorclient.events.packets.PacketEvent;
-import meteordevelopment.meteorclient.events.world.BlockActivateEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.mixin.ClientPlayerEntityAccessor;
 import meteordevelopment.meteorclient.mixin.PlayerMoveC2SPacketAccessor;
@@ -18,13 +16,8 @@ import meteordevelopment.meteorclient.utils.Utils;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.block.AbstractBlock;
 import net.minecraft.entity.Entity;
-import net.minecraft.item.BlockItem;
 import net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket;
 import net.minecraft.server.network.ServerPlayNetworkHandler;
-import net.minecraft.util.Hand;
-import net.minecraft.util.hit.HitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
 
 public class Flight extends Module {
@@ -59,8 +52,9 @@ public class Flight extends Module {
 
     private final Setting<Boolean> noSneak = sgGeneral.add(new BoolSetting.Builder()
         .name("no-sneak")
-        .description("Prevents you from getting kicked for sneaking.")
+        .description("Prevents you from sneaking while flying.")
         .defaultValue(false)
+        .visible(() -> mode.get() == Mode.Velocity)
         .build()
     );
 
@@ -98,10 +92,6 @@ public class Flight extends Module {
 
     public Flight() {
         super(Categories.Movement, "flight", "FLYYYY! No Fall is recommended with this module.");
-    }
-
-    public boolean noSneak() {
-        return isActive() && noSneak.get();
     }
 
     @Override
@@ -166,11 +156,13 @@ public class Flight extends Module {
             case Velocity -> {
                 mc.player.getAbilities().flying = false;
                 mc.player.setVelocity(0, 0, 0);
-
+                Vec3d playerVelocity = mc.player.getVelocity();
                 if (mc.options.jumpKey.isPressed())
-                    mc.player.setVelocity(mc.player.getVelocity().add(0, speed.get() * (verticalSpeedMatch.get() ? 10f : 5f), 0));
-                if (mc.options.sneakKey.isPressed()) {
-                    mc.player.setVelocity(mc.player.getVelocity().subtract(0, speed.get() * (verticalSpeedMatch.get() ? 10f : 5f), 0));
+                    playerVelocity = playerVelocity.add(0, speed.get() * (verticalSpeedMatch.get() ? 10f : 5f), 0);
+                if (mc.options.sneakKey.isPressed())
+                    playerVelocity = playerVelocity.subtract(0, speed.get() * (verticalSpeedMatch.get() ? 10f : 5f), 0);
+                mc.player.setVelocity(playerVelocity);
+                if (noSneak.get()) {
                     mc.player.setOnGround(false);
                 }
             }
@@ -256,6 +248,10 @@ public class Flight extends Module {
 
         if (!isActive() || mode.get() != Mode.Velocity) return -1;
         return speed.get().floatValue() * (mc.player.isSprinting() ? 15f : 10f);
+    }
+
+    public boolean noSneak() {
+        return isActive() && mode.get() == Mode.Velocity && noSneak.get();
     }
 
     public enum Mode {
