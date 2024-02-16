@@ -54,6 +54,16 @@ public class Scaffold extends Module {
         .build()
     );
 
+    private final Setting<Double> towerSpeed = sgGeneral.add(new DoubleSetting.Builder()
+        .name("tower-speed")
+        .description("The speed at which to tower.")
+        .defaultValue(0.5)
+        .min(0)
+        .sliderMax(1)
+        .visible(fastTower::get)
+        .build()
+    );
+
     private final Setting<Boolean> whileMoving = sgGeneral.add(new BoolSetting.Builder()
         .name("while-moving")
         .description("Allows you to tower while moving.")
@@ -256,14 +266,14 @@ public class Scaffold extends Module {
             place(bp);
         }
 
-        if (fastTower.get() && mc.options.jumpKey.isPressed() && !mc.options.sneakKey.isPressed()) {
+        FindItemResult result = InvUtils.findInHotbar(itemStack -> validItem(itemStack, bp));
+        if (fastTower.get() && mc.options.jumpKey.isPressed() && !mc.options.sneakKey.isPressed() && result.found() && (autoSwitch.get() || result.getHand() != null)) {
             Vec3d velocity = mc.player.getVelocity();
             Box playerBox = mc.player.getBoundingBox();
-            if (Streams.stream(mc.world.getBlockCollisions(mc.player, playerBox.offset(0, 1, 0))).toList().isEmpty() /*||
-                !Streams.stream(mc.world.getBlockCollisions(mc.player, playerBox.offset(0, -1, 0))).toList().isEmpty()*/) {
+            if (Streams.stream(mc.world.getBlockCollisions(mc.player, playerBox.offset(0, 1, 0))).toList().isEmpty()) {
                 // If there is no block above the player: move the player up, so he can place another block
-                if (whileMoving.get() || (!mc.options.forwardKey.isPressed() && !mc.options.backKey.isPressed() && !mc.options.leftKey.isPressed() && !mc.options.rightKey.isPressed())) {
-                    velocity = new Vec3d(velocity.x, 0.5, velocity.z);
+                if (whileMoving.get() || !PlayerUtils.isMoving()) {
+                    velocity = new Vec3d(velocity.x, towerSpeed.get(), velocity.z);
                 }
                 mc.player.setVelocity(velocity);
             } else {
@@ -279,9 +289,9 @@ public class Scaffold extends Module {
     }
 
     public boolean towering() {
-        return isActive() && fastTower.get() && mc.options.jumpKey.isPressed() && !mc.options.sneakKey.isPressed() &&
-            (whileMoving.get() || (!mc.options.forwardKey.isPressed() && !mc.options.backKey.isPressed() && !mc.options.leftKey.isPressed() && !mc.options.rightKey.isPressed())) &&
-            (!onlyOnClick.get() || (onlyOnClick.get() && mc.options.useKey.isPressed()));
+        FindItemResult result = InvUtils.findInHotbar(itemStack -> validItem(itemStack, bp));
+        return scaffolding() && fastTower.get() && mc.options.jumpKey.isPressed() && !mc.options.sneakKey.isPressed() &&
+            (whileMoving.get() || !PlayerUtils.isMoving()) && result.found() && (autoSwitch.get() || result.getHand() != null);
     }
 
     private boolean validItem(ItemStack itemStack, BlockPos pos) {
