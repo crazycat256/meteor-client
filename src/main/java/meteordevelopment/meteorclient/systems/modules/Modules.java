@@ -515,6 +515,7 @@ public class Modules extends System<Modules> {
         add(new Blur());
         add(new PopChams());
         add(new TunnelESP());
+        add(new BetterTab());
     }
 
     private void initWorld() {
@@ -557,7 +558,6 @@ public class Modules extends System<Modules> {
         add(new AutoRespawn());
         add(new BetterBeacons());
         add(new BetterChat());
-        add(new BetterTab());
         add(new BookBot());
         add(new DiscordPresence());
         add(new MessageAura());
